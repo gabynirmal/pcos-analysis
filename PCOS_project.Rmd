@@ -1,0 +1,284 @@
+---
+title: "PCOS project"
+author: "Praveen Sinha"
+date: "2026-04-12"
+output: html_document
+---
+
+### load and prepare data
+```{r}
+df <- read.csv("~/Desktop/DS 4420/PCOS_data.csv")
+```
+
+### Clean column names
+```{r}
+colnames(df) <- make.names(colnames(df))
+```
+
+### Create target
+```{r}
+df$PCOS <- df$PCOS..Y.N.
+```
+
+### Drop unwanted columns
+```{r}
+df <- df[, !(names(df) %in% c(
+  "Sl..No", 
+  "Patient.File.No.", 
+  "PCOS..Y.N.", 
+  "X"
+))]
+```
+
+### Convert all columns to numeric 
+```{r}
+df[] <- lapply(df, function(col) {
+  if (is.factor(col) || is.character(col)) {
+    as.numeric(as.factor(col))
+  } else {
+    col
+  }
+})
+```
+
+### Remove rows with NA
+```{r}
+df <- na.omit(df)
+```
+### Split features and target
+```{r}
+X <- as.matrix(df[, !(names(df) %in% c("PCOS"))])
+y <- df$PCOS
+```
+
+### Add intercept
+```{r}
+X <- cbind(1, X)
+```
+
+```{r}
+str(X)
+```
+
+### Scale features
+```{r}
+X[, -1] <- scale(X[, -1])
+
+## defining the metropolis-hastings and helper functions
+sigmoid <- function(z) {
+  1 / (1 + exp(-z))
+}
+
+log_likelihood <- function(w, X, y) {
+  p <- sigmoid(X %*% w)
+  sum(y * log(p + 1e-9) + (1 - y) * log(1 - p + 1e-9))
+}
+
+log_prior <- function(w) {
+  sum(dnorm(w, mean = 0, sd = 1, log = TRUE))
+}
+
+log_posterior <- function(w, X, y) {
+  log_likelihood(w, X, y) + log_prior(w)
+}
+
+metropolis_hastings <- function(X, y, n_iter = 5000, step_size = 0.1) {
+  
+  n_features <- ncol(X)
+  w_current <- rep(0, n_features)
+  
+  samples <- matrix(0, nrow = n_iter, ncol = n_features)
+  
+  accept_count <- 0
+  
+  for (i in 1:n_iter) {
+    
+    w_proposal <- w_current + rnorm(n_features, 0, step_size)
+    
+    log_post_current <- log_posterior(w_current, X, y)
+    log_post_proposal <- log_posterior(w_proposal, X, y)
+    
+    log_alpha <- log_post_proposal - log_post_current
+    
+    if (log(runif(1)) < log_alpha) {
+      w_current <- w_proposal
+      accept_count <- accept_count + 1
+    }
+    
+    samples[i, ] <- w_current
+  }
+  
+  cat("Acceptance Rate:", accept_count / n_iter, "\n")
+  
+  return(samples)
+}
+```
+
+### Sample
+```{r}
+samples <- metropolis_hastings(X, y, n_iter = 5000, step_size = 0.05)
+
+
+burn_in <- 1000
+posterior <- samples[(burn_in+1):nrow(samples), ]
+
+# smaller step size
+samples2 <- metropolis_hastings(X, y, n_iter = 5000, step_size = 0.03)
+
+# larger step size
+samples3 <- metropolis_hastings(X, y, n_iter = 5000, step_size = 0.07)
+```
+
+We evaluated multiple step sizes to assess the sampler performance. As we expected, smaller step sizes resulted in higher acceptance rates (≈0.59), indicating overly conservative proposals, while larger step sizes reduced acceptance (≈0.25), reflecting more aggressive exploration. We selected a step size of 0.05, yielding an acceptance rate of approximately 0.41, which provided a strong balance between exploration and stability. The consistency of posterior estimates across step sizes further supports the robustness of the model.
+
+### stable results
+```{r}
+colMeans(samples[(1000+1):5000, ])
+colMeans(samples2[(1000+1):5000, ])
+colMeans(samples3[(1000+1):5000, ])
+```
+### Mean estimates
+```{r}
+coef_mean <- colMeans(posterior)
+
+# 95% credible intervals
+lower <- apply(posterior, 2, quantile, 0.025)
+upper <- apply(posterior, 2, quantile, 0.975)
+
+results <- data.frame(
+  Feature = colnames(X),
+  Mean = coef_mean,
+  Lower = lower,
+  Upper = upper
+)
+
+# Fix intercept name
+results$Feature[1] <- "Intercept"
+
+head(results)
+
+important <- results[
+  (results$Lower > 0) | (results$Upper < 0),
+]
+
+important
+
+library(ggplot2)
+
+ggplot(important[-1, ], aes(x = Mean, y = reorder(Feature, Mean))) +
+  geom_point() +
+  geom_errorbar(
+    aes(xmin = Lower, xmax = Upper),
+    orientation = "y",
+    width = 0.2
+  ) +
+  labs(
+    title = "Significant Features (95% Credible Intervals)",
+    x = "Effect on PCOS",
+    y = "Features"
+  ) +
+  theme_minimal()
+```
+
+### posterior distribution plots
+```{r} 
+hist(posterior[, 10], main="Posterior for Cycle.R.I.", col="lightblue")
+```
+
+### Trace plot (for convergence)
+```{r} 
+plot(samples[,10], type="l", main="Trace Plot")
+```
+
+### Coefficients of features
+```{r} 
+
+for (i in 1:nrow(results)) {
+  cat(
+    results$Feature[i], ":\n",
+    "  Mean =", round(results$Mean[i], 3), "\n",
+    "  95% CI = [",
+    round(results$Lower[i], 3), ",",
+    round(results$Upper[i], 3), "]\n\n"
+  )
+}
+```
+
+The strongest predictor in our model was follicle count, particularly in the right ovary, which is directly aligned with the Rotterdam criteria for PCOS diagnosis.
+
+### all results
+```{r}
+write.csv(results, "bayesian_manual_coefficients.csv", row.names = FALSE)
+```
+
+### important
+```{r}
+write.csv(important, "bayesian_important_features.csv", row.names = FALSE)
+write.csv(results, "~/Desktop/DS 4420/bayesian_manual_coefficients.csv", row.names = FALSE)
+```
+
+### train/test split
+```{r}
+set.seed(42)
+
+idx <- sample(1:nrow(X), 0.8 * nrow(X))
+
+X_train <- X[idx, ]
+y_train <- y[idx]
+
+X_test <- X[-idx, ]
+y_test <- y[-idx]
+```
+
+### Posterior averaging
+```{r}
+samples <- metropolis_hastings(X_train, y_train, n_iter = 5000, step_size = 0.05)
+
+burn_in <- 1000
+posterior <- samples[(burn_in+1):nrow(samples), ]
+```
+
+
+```{r}
+predict_proba <- function(X_new, posterior_samples) {
+  probs <- apply(posterior_samples, 1, function(w) {
+    1 / (1 + exp(-X_new %*% w))
+  })
+  
+  rowMeans(probs)
+}
+```
+
+### train accuracy
+```{r}
+train_probs <- predict_proba(X_train, posterior)
+train_preds <- ifelse(train_probs > 0.5, 1, 0)
+
+train_accuracy <- mean(train_preds == y_train)
+
+train_accuracy
+```
+
+### test accuracy
+```{r}
+test_probs <- predict_proba(X_test, posterior)
+test_preds <- ifelse(test_probs > 0.5, 1, 0)
+
+test_accuracy <- mean(test_preds == y_test)
+
+test_accuracy
+```
+
+### confusion matrix
+```{r}
+table(Predicted = test_preds, Actual = y_test)
+```
+
+### Precision + Recall
+```{r}
+precision <- sum(test_preds == 1 & y_test == 1) / sum(test_preds == 1)
+recall <- sum(test_preds == 1 & y_test == 1) / sum(y_test == 1)
+
+precision
+recall
+```
