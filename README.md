@@ -121,7 +121,7 @@ source("pcos_bayesian.R")
 
 | Model | Accuracy | PCOS Recall | PCOS Precision |
 |---|---|---|---|
-| MLP (Manual) | TBD | TBD | TBD |
+| MLP (Manual) | 88% |TBD | TBD |
 | CNN (Keras) | 83% | 0.78 | 0.74 |
 | Bayesian LR | TBD | TBD | TBD |
 
