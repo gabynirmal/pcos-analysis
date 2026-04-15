@@ -7,7 +7,7 @@ output: html_document
 
 ### load and prepare data
 ```{r}
-df <- read.csv("~/Desktop/DS 4420/PCOS_data.csv")
+df <- read.csv("../../data/PCOS_data.csv")
 ```
 
 ### Clean column names
