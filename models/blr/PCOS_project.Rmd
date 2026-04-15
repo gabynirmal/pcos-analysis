@@ -7,7 +7,7 @@ output: html_document
 
 ### load and prepare data
 ```{r}
-df <- read.csv("../../data/PCOS_data.csv")
+df <- read.csv("~/Desktop/DS 4420/PCOS_data.csv")
 ```
 
 ### Clean column names
@@ -281,4 +281,50 @@ recall <- sum(test_preds == 1 & y_test == 1) / sum(y_test == 1)
 
 precision
 recall
+```
+
+### F1 score
+```{r}
+# PCOS = 1 (positive class)
+precision_pos <- sum(test_preds == 1 & y_test == 1) / sum(test_preds == 1)
+recall_pos <- sum(test_preds == 1 & y_test == 1) / sum(y_test == 1)
+
+f1_pos <- 2 * (precision_pos * recall_pos) / (precision_pos + recall_pos)
+
+f1_pos
+
+# PCOS = 0 (negative class)
+precision_neg <- sum(test_preds == 0 & y_test == 0) / sum(test_preds == 0)
+recall_neg <- sum(test_preds == 0 & y_test == 0) / sum(y_test == 0)
+
+f1_neg <- 2 * (precision_neg * recall_neg) / (precision_neg + recall_neg)
+
+f1_neg
+
+```
+
+### log-loss entropy
+```{r}
+log_loss <- function(y_true, y_prob) {
+  eps <- 1e-9
+  y_prob <- pmin(pmax(y_prob, eps), 1 - eps)
+  
+  -mean(y_true * log(y_prob) + (1 - y_true) * log(1 - y_prob))
+}
+
+loss <- log_loss(y_test, test_probs)
+
+loss
+```
+
+### AUC
+```{r}
+library(pROC)
+roc_obj <- roc(y_test, test_probs)
+
+auc_value <- auc(roc_obj)
+
+auc_value
+plot(roc_obj, col="blue", main="ROC Curve")
+roc(y_test, test_probs)
 ```
